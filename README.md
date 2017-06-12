@@ -5,6 +5,14 @@ A C++ wrapper of Qt Charts that looks, tastes and smells like [matplotlib](https
 
 Madplotlib is a C++ header-only library that provides simple 2D plot capabilities, similar to [matplotlib](https://github.com/matplotlib/matplotlib) for Python. Madplotlib uses Qt Charts behind your back to render cool looking ~~cats~~ graphs that are easy to create with the help of [Eigen](eigen.tuxfamily.org).
 
+Screenshots
+-----------
+
+[](https://github.com/madplotlib/madplotlib/screenshots/test1.png =300x200) [](https://github.com/madplotlib/madplotlib/screenshots/test2.png =300x200)
+[](https://github.com/madplotlib/madplotlib/screenshots/test3.png =300x200) [](https://github.com/madplotlib/madplotlib/screenshots/test4.png =300x200)
+[](https://github.com/madplotlib/madplotlib/screenshots/test5.png =300x200) [](https://github.com/madplotlib/madplotlib/screenshots/test7.png =300x200)
+[](https://github.com/madplotlib/madplotlib/screenshots/test8.png =300x200) [](https://github.com/madplotlib/madplotlib/screenshots/test10.png =300x200)
+
 Installation
 ------------
 Make sure to use **Qt 5.7** or higher and that you have **Eigen 3.x** properly installed. 
@@ -24,6 +32,7 @@ Remember: when in doubt, do not clone... fork!
 Contact
 -------
 [Twitter](http://twitter.com/karlphillip) 
+
 [Stackoverflow](http://stackoverflow.com/users/176769/karlphillip)
 
 Library features

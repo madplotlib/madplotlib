@@ -7,23 +7,27 @@
  * This file is part of Madplotlib, a C++ library for building simple
  * 2D plots inspired on matplotlib.
  */
+/*
+ * plot() has many forms. This file demonstrates how to use some of them.
+ * However, the most complete form of plot() currently is:
+ *     plot(x, y, marker, label, alpha, color, linewidth, markeredgecolor, markersize)
+ *
+ * Happy plotting!
+ */
+
 #include <Eigen/Dense>
 
 #include "Madplotlib.h"
 
 #include <QApplication>
 
-/*
- * plot() has many forms. This file demonstrates how to use some of them.
- * However, the most complete form of plot() is:
- *     plot(x, y, marker, label, alpha, color, linewidth, markeredgecolor, markersize)
- *
- * Happy plotting!
- */
+// Uncomment the line below to save each chart as PNG image
+#define SCRSHOT
 
 /* Use case: simple line chart.
  * plot() draws the values of x and y on a line chart.
  * show() creates a new window to display the chart.
+ * savefig() saves a screenshot of the chart as PNG image.
  */
 void test1()
 {
@@ -38,6 +42,10 @@ void test1()
     Madplotlib plt;
     plt.plot(x, y);
     plt.show();
+
+#ifdef SCRSHOT
+    plt.savefig("test1.png");
+#endif
 }
 
 /* Use case: simple scatter chart.
@@ -54,6 +62,10 @@ void test2()
     plt.title("Test 2: Simple Scatter Plot");
     plt.plot(x, y, QString("o"));
     plt.show();
+
+#ifdef SCRSHOT
+    plt.savefig("test2.png");
+#endif
 }
 
 /* Use case: plot 3 data sets on a line chart.
@@ -77,6 +89,10 @@ void test3()
     plt.plot(x, y+10, QString("."), QString("label=Dotted Line"));
     plt.legend(); // default position is "lower center"
     plt.show();
+
+#ifdef SCRSHOT
+    plt.savefig("test3.png");
+#endif
 }
 
 /* Use case: simple scatter chart.
@@ -112,6 +128,10 @@ void test4()
     plt.plot(x, y, QString("o"), 0.7f, QColor(255, 0, 0), 8.0f); // red, 30% transparent, markersize 8
     plt.plot(x2, y2, QString("o"), 0.5f, QColor(0, 0, 255));     // blue, 50% transparent
     plt.show();
+
+#ifdef SCRSHOT
+    plt.savefig("test4.png");
+#endif
 }
 
 
@@ -147,6 +167,10 @@ void test5()
     plt.plot(c, QString("label=Flat"));
     plt.legend("loc=center right");
     plt.show();
+
+#ifdef SCRSHOT
+    plt.savefig("test5.png");
+#endif
 }
 
 
@@ -176,6 +200,10 @@ void test6()
     plt.xlabel("X values");
     plt.ylabel("Y values");
     plt.show();
+
+#ifdef SCRSHOT
+    plt.savefig("test6.png");
+#endif
 }
 
 /* Use case with several UI customizations.
@@ -215,7 +243,11 @@ void test7()
     plt.plot(x, y+1, QString("o"), 1.f, 2, 7.0f); // alpha=1.f, linewidth=2, markersize=7.f
     plt.grid(true);
 
-    plt.show();    
+    plt.show();
+
+#ifdef SCRSHOT
+    plt.savefig("test7.png");
+#endif
 }
 
 /* Use case that displays two waves on a scatter plot and then connects them with lines.
@@ -241,6 +273,10 @@ void test8()
     plt.plot(x, x.sqrt() - noise, QString("s"), 0.7f, QColor(19, 154, 255), QColor(19, 154, 255)); // red squares without black edges
     plt.plot(x, -x.sqrt() - noise, QString("s"), 0.7f, QColor(255, 41, 5), QColor(255, 41, 5));    // blue squares without black edges
     plt.show();
+
+#ifdef SCRSHOT
+    plt.savefig("test8.png");
+#endif
 }
 
 /* Use case that displays Y data twice with custom limits and ticks for both axis.
@@ -276,6 +312,10 @@ void test9()
     plt.plot(x, y, QColor(169, 206, 0)); // plot green line
     plt.plot(x, y, QString("o"), QColor(255, 255, 255), 2, QColor(169, 206, 0), 6.5f); // plot markers, linewith=2, markersize=6.5
     plt.show();
+
+#ifdef SCRSHOT
+    plt.savefig("test9.png");
+#endif
 }
 
 /* Use case that displays Y data twice and hides the labels from X axis.
@@ -309,6 +349,10 @@ void test10()
     plt.xlim(0, 2*pi);
     plt.xticks(x_ticks, x_labels);
     plt.show();
+
+#ifdef SCRSHOT
+    plt.savefig("test10.png");
+#endif
 }
 
 void run_test(int id)
