@@ -1,0 +1,8 @@
+TODO:
+====
+ * Add more tests;
+ * Add support to change Font preferences (Italic, Bold, ...);
+ * Throw exceptions upon failure instead of exit();
+ * Extend support to a few more Eigen data types: ArrayXd, ArrayXXf;
+ * Add support to Qt data types: QVector<int>, QVector<qreal>, QVector<double>;
+ * Rethink the approach to support a variable number of parameters for plot();
