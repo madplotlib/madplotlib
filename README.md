@@ -5,11 +5,36 @@ A C++ wrapper of Qt Charts that looks, tastes and smells like [matplotlib](https
 
 Madplotlib is a C++ header-only library that provides simple 2D plot capabilities, similar to [matplotlib](https://github.com/matplotlib/matplotlib) for Python. Madplotlib uses Qt Charts behind your back to render cool looking ~~cats~~ graphs that are easy to create with the help of [Eigen](eigen.tuxfamily.org).
 
+Here is what it looks like:
+
+```cpp
+Eigen::ArrayXf a = Eigen::ArrayXf::LinSpaced(20, 0, 2000);
+Eigen::ArrayXf b = Eigen::ArrayXf::LinSpaced(20, 0, 100);
+Eigen::ArrayXf c = Eigen::ArrayXf::Zero(20);
+
+b = b * b;
+c = 1000;
+
+Madplotlib plt;
+plt.title("Test 5: Linear vs Exponential vs Flat");
+plt.ylabel("Y Values");
+plt.xlabel("X Values");
+
+plt.plot(a, QString("label=Linear"));
+plt.plot(b, QString("label=Exponential"));
+plt.plot(c, QString("label=Flat"));
+plt.legend("loc=center right");
+plt.show();
+```    
+
 Screenshots
 -----------
 <img src="https://github.com/madplotlib/madplotlib/blob/master/screenshots/test1.png" width="300" height="200"> <img src="https://github.com/madplotlib/madplotlib/blob/master/screenshots/test2.png" width="300" height="200"> 
+
 <img src="https://github.com/madplotlib/madplotlib/blob/master/screenshots/test3.png" width="300" height="200"> <img src="https://github.com/madplotlib/madplotlib/blob/master/screenshots/test4.png" width="300" height="200">
+
 <img src="https://github.com/madplotlib/madplotlib/blob/master/screenshots/test5.png" width="300" height="200"> <img src="https://github.com/madplotlib/madplotlib/blob/master/screenshots/test7.png" width="300" height="200">
+
 <img src="https://github.com/madplotlib/madplotlib/blob/master/screenshots/test8.png" width="300" height="200"> <img src="https://github.com/madplotlib/madplotlib/blob/master/screenshots/test10.png" width="300" height="200">
 
 Installation
