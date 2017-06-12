@@ -7,11 +7,10 @@ Madplotlib is a C++ header-only library that provides simple 2D plot capabilitie
 
 Screenshots
 -----------
-
-![](https://github.com/madplotlib/madplotlib/blob/master/screenshots/test1.png =300x200) ![](https://github.com/madplotlib/madplotlib/blob/master/screenshots/test2.png =300x200)
-![](https://github.com/madplotlib/madplotlib/blob/master/screenshots/test3.png =300x200) ![](https://github.com/madplotlib/madplotlib/blob/master/screenshots/test4.png =300x200)
-![](https://github.com/madplotlib/madplotlib/blob/master/screenshots/test5.png =300x200) ![](https://github.com/madplotlib/madplotlib/blob/master/screenshots/test7.png =300x200)
-![](https://github.com/madplotlib/madplotlib/blob/master/screenshots/test8.png =300x200) ![](https://github.com/madplotlib/madplotlib/blob/master/screenshots/test10.png =300x200)
+<img src="https://github.com/madplotlib/madplotlib/blob/master/screenshots/test1.png" width="300" height="200"> <img src="https://github.com/madplotlib/madplotlib/blob/master/screenshots/test2.png" width="300" height="200"> 
+<img src="https://github.com/madplotlib/madplotlib/blob/master/screenshots/test3.png" width="300" height="200"> <img src="https://github.com/madplotlib/madplotlib/blob/master/screenshots/test4.png" width="300" height="200">
+<img src="https://github.com/madplotlib/madplotlib/blob/master/screenshots/test5.png" width="300" height="200"> <img src="https://github.com/madplotlib/madplotlib/blob/master/screenshots/test7.png" width="300" height="200">
+<img src="https://github.com/madplotlib/madplotlib/blob/master/screenshots/test8.png" width="300" height="200"> <img src="https://github.com/madplotlib/madplotlib/blob/master/screenshots/test10.png" width="300" height="200">
 
 Installation
 ------------
