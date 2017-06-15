@@ -24,6 +24,208 @@
 #include <QtCharts/QScatterSeries>
 #include <QtCharts/QValueAxis>
 
+#pragma once
+
+#define MO_KEYWORD_INPUT(name, type)                                                                                                  \
+namespace tag{                                                                                                                        \
+    struct name {                                                                                                                     \
+        typedef type        Type;                                                                                                     \
+        typedef const Type& ConstRef;                                                                                                 \
+        typedef Type&       Ref;                                                                                                      \
+        typedef ConstRef    StorageType;                                                                                              \
+        typedef const void* VoidType;                                                                                                 \
+        template <typename T>                                                                                                         \
+        static constexpr bool AllowedType() { return std::is_same<Type, T>::value; }                                                  \
+        static VoidType GetPtr(const Type& arg) {                                                                                     \
+            return &arg;                                                                                                              \
+        }                                                                                                                             \
+        template <class T>                                                                                                            \
+        static VoidType GetPtr(const T& arg) {                                                                                        \
+            (void)arg;                                                                                                                \
+            return nullptr;                                                                                                           \
+        }                                                                                                                             \
+    };                                                                                                                                \
+}                                                                                                                                     \
+static kwargs::TKeyword<tag::name>& _##name = kwargs::TKeyword<tag::name>::instance;
+
+
+#define MO_KEYWORD_OUTPUT(name, type)                                                                                                 \
+namespace tag{                                                                                                                        \
+    struct name {                                                                                                                     \
+        typedef type        Type;                                                                                                     \
+        typedef const Type& ConstRef;                                                                                                 \
+        typedef Type&       Ref;                                                                                                      \
+        typedef Ref         StorageType;                                                                                              \
+        typedef void*       VoidType;                                                                                                 \
+        template <typename T>                                                                                                         \
+        static constexpr bool AllowedType() { return std::is_same<Type, T>::value; }                                                  \
+        static VoidType GetPtr(Type& arg) {                                                                                           \
+            return &arg;                                                                                                              \
+        }                                                                                                                             \
+        template <class T>                                                                                                            \
+        static VoidType GetPtr(const T& arg) {                                                                                        \
+            (void)arg;                                                                                                                \
+            return nullptr;                                                                                                           \
+        }                                                                                                                             \
+    };                                                                                                                                \
+}                                                                                                                                     \
+static kwargs::TKeyword<name>& _##name = kwargs::TKeyword<name>::instance;
+
+namespace kwargs {
+    struct TaggedBase {};
+    template <class Tag>
+    struct TaggedArgument : public TaggedBase {
+        typedef Tag TagType;
+        explicit TaggedArgument(typename Tag::StorageType val)
+            : arg(&val) {
+        }
+
+        typename Tag::VoidType get() const {
+            return arg;
+        }
+
+    protected:
+        typename Tag::VoidType arg;
+    };
+
+    template <class Tag>
+    struct TKeyword {
+        static TKeyword     instance;
+        TaggedArgument<Tag> operator=(typename Tag::StorageType data) {
+            return TaggedArgument<Tag>(data);
+        }
+    };
+    template <class T>
+    TKeyword<T> TKeyword<T>::instance;
+}
+
+template <int N, typename... T>
+struct ArgType;
+
+template <typename T0, typename... T>
+struct ArgType<0, T0, T...> {
+    typedef T0 type;
+};
+template <int N, typename T0, typename... T>
+struct ArgType<N, T0, T...> {
+    typedef typename ArgType<N - 1, T...>::type type;
+};
+
+template <class Tag, bool Infer = false>
+typename Tag::VoidType GetKeyImpl() {
+    return 0;
+}
+
+template <class T, class U>
+constexpr int CountTypeImpl(const U& value) {
+    return std::is_same<T, U>::value ? 1 : 0;
+}
+
+template <class T, class U, class... Args>
+constexpr int CountTypeImpl(const U& value, const Args&... args) {
+    return CountTypeImpl<T, Args...>(args...) + (std::is_same<T, U>::value ? 1 : 0);
+}
+
+template <class T, class... Args>
+constexpr int CountType(const Args&... args) {
+    return CountTypeImpl<T, Args...>(args...);
+}
+
+template <size_t N, typename... Args>
+auto GetPositionalInput(Args&&... as) noexcept -> decltype(std::get<N>(std::forward_as_tuple(std::forward<Args>(as)...))) {
+    return std::get<N>(std::forward_as_tuple(std::forward<Args>(as)...));
+}
+
+template <class Tag, bool Infer = false, class T, class... Args>
+typename std::enable_if<std::is_base_of<kwargs::TaggedBase, T>::value, typename Tag::VoidType>::type
+    GetKeyImpl(const T& arg, const Args&... args) {
+    return std::is_same<typename T::TagType, Tag>::value ? const_cast<void*>(arg.get()) : const_cast<void*>(GetKeyImpl<Tag, Infer, Args...>(args...));
+}
+
+template <class Tag, bool Infer = false, class T, class... Args>
+typename std::enable_if<!std::is_base_of<kwargs::TaggedBase, T>::value, typename Tag::VoidType>::type
+    GetKeyImpl(const T& arg, const Args&... args) {
+#ifdef __GNUC__
+    //static_assert(CountType<typename Tag::Type>(arg, args...) <= 1, "Cannot infer type when there are multiple variadic Params with desired type");
+#endif
+    return Tag::template AllowedType<T>() && Infer ? // This infers the type
+        Tag::GetPtr(arg)
+        : const_cast<void*>(GetKeyImpl<Tag, Infer, Args...>(args...));
+}
+
+template <class Tag, bool Infer = false, class... Args>
+typename Tag::ConstRef GetKeywordInput(const Args&... args) {
+    const void* ptr = GetKeyImpl<Tag, Infer>(args...);
+    assert(ptr);
+    return *(static_cast<const typename Tag::Type*>(ptr));
+}
+
+template <class Tag, bool Infer = false, class... Args>
+typename Tag::ConstRef GetKeywordInputDefault(typename Tag::ConstRef def, const Args&... args) {
+    const void* ptr = GetKeyImpl<Tag, Infer>(args...);
+    if (ptr)
+        return *static_cast<const typename Tag::Type*>(ptr);
+    return def;
+}
+
+template <class Tag, bool Infer = false, class... Args>
+const typename Tag::Type* GetKeywordInputOptional(const Args&... args) {
+    const void* ptr = GetKeyImpl<Tag, Infer>(args...);
+    if (ptr)
+        return static_cast<const typename Tag::Type*>(ptr);
+    return nullptr;
+}
+
+template <class Tag, bool Infer = false, class... Args>
+typename Tag::Ref GetKeywordOutput(const Args&... args) {
+    static_assert(!std::is_const<typename Tag::VoidType>::value, "Tag type is not an output tag");
+    void* ptr = GetKeyImpl<Tag, Infer>(args...);
+    assert(ptr);
+    return *(static_cast<typename Tag::Type*>(ptr));
+}
+
+template <class Tag, bool Infer = false, class... Args>
+typename Tag::Type* GetKeywordOutputOptional(const Args&... args) {
+    static_assert(!std::is_const<typename Tag::VoidType>::value, "Tag type is not an output tag");
+    void* ptr = GetKeyImpl<Tag, Infer>(args...);
+    if (ptr)
+        return (static_cast<typename Tag::Type*>(ptr));
+    return nullptr;
+}
+
+MO_KEYWORD_INPUT(x, Eigen::ArrayXf)
+MO_KEYWORD_INPUT(y, Eigen::ArrayXf)
+MO_KEYWORD_INPUT(marker, QString);
+MO_KEYWORD_INPUT(label, QString);
+MO_KEYWORD_INPUT(color, QColor);
+MO_KEYWORD_INPUT(linewidth, quint32);
+MO_KEYWORD_INPUT(alpha, qreal);
+MO_KEYWORD_INPUT(edgecolor, QColor);
+MO_KEYWORD_INPUT(markersize, qreal);
+
+template<typename T, typename Enable = void>
+struct is_matrix_expression : std::false_type {};
+template<typename T>
+struct is_matrix_expression<T, decltype(std::declval<Eigen::ArrayXf>() = std::declval<T>(), void())> : std::true_type {};
+
+template<class Arg>
+constexpr bool detectExpressionArg(const Arg& arg) {
+    return is_matrix_expression<Arg>::value;
+}
+template<class Arg, class ... Args>
+constexpr bool detectExpressionArg(const Arg& arg, const Args&... args) {
+    return is_matrix_expression<Arg>::value ? true : detectExpressionArg(args...);
+}
+
+template<class Arg> typename std::enable_if<is_matrix_expression<Arg>::value>::type applyExpression(Eigen::ArrayXf& X, const Arg& Y)
+{
+    X = Y;
+}
+
+template<class Arg> typename std::enable_if<!is_matrix_expression<Arg>::value>::type applyExpression(Eigen::ArrayXf& X, const Arg& Y)
+{
+
+}
 
 /* Debug control */
 
@@ -60,6 +262,7 @@ public:
         qDebug() << "Madplotlib(): isWidget=" << isWidget;
 #endif
         _chart = new QtCharts::QChart();
+
         _chartView = new QtCharts::QChartView(_chart);
 
         _enableGrid = false;
@@ -310,989 +513,14 @@ public:
             return;
         }
     }
-
-    /* Overloaded plot(y) methods with 1-2 parameters */
-
-    void plot(const Eigen::ArrayXf& y)
-    {
-        plot(y, DEFAULT_MARKER, DEFAULT_LEGEND, DEFAULT_ALPHA, DEFAULT_COLOR, DEFAULT_LINEW, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1)
-    {
-        if (_is_marker(cmd1))
-            plot(y, cmd1, DEFAULT_LEGEND, DEFAULT_ALPHA, DEFAULT_COLOR, DEFAULT_LINEW, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-        else
-            plot(y, DEFAULT_MARKER, cmd1, DEFAULT_ALPHA, DEFAULT_COLOR, DEFAULT_LINEW, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const qreal& alpha)
-    {
-        plot(y, DEFAULT_MARKER, DEFAULT_LEGEND, alpha, DEFAULT_COLOR, DEFAULT_LINEW, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QColor& color)
-    {
-        plot(y, DEFAULT_MARKER, DEFAULT_LEGEND, DEFAULT_ALPHA, color, DEFAULT_LINEW, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const quint32& linewidth)
-    {
-        plot(y, DEFAULT_MARKER, DEFAULT_LEGEND, DEFAULT_ALPHA, DEFAULT_COLOR, linewidth, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    /* Overloaded plot(y) methods with 3 parameters */
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(y, cmd1, cmd2, DEFAULT_ALPHA, DEFAULT_COLOR, DEFAULT_LINEW, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-        else
-            plot(y, cmd2, cmd1, DEFAULT_ALPHA, DEFAULT_COLOR, DEFAULT_LINEW, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const qreal& alpha)
-    {
-        if (_is_marker(cmd1))
-            plot(y, cmd1, DEFAULT_LEGEND, alpha, DEFAULT_COLOR, DEFAULT_LINEW, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-        else
-            plot(y, DEFAULT_MARKER, cmd1, alpha, DEFAULT_COLOR, DEFAULT_LINEW, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const QColor& color)
-    {
-        if (_is_marker(cmd1))
-            plot(y, cmd1, DEFAULT_LEGEND, DEFAULT_ALPHA, color, DEFAULT_LINEW, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-        else
-            plot(y, DEFAULT_MARKER, cmd1, DEFAULT_ALPHA, color, DEFAULT_LINEW, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const quint32& linewidth)
-    {
-        if (_is_marker(cmd1))
-            plot(y, cmd1, DEFAULT_LEGEND, DEFAULT_ALPHA, DEFAULT_COLOR, linewidth, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-        else
-            plot(y, DEFAULT_MARKER, cmd1, DEFAULT_ALPHA, DEFAULT_COLOR, linewidth, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const qreal& alpha, const QColor& color)
-    {
-        plot(y, DEFAULT_MARKER, DEFAULT_LEGEND, alpha, color, DEFAULT_LINEW, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const qreal& alpha, const quint32& linewidth)
-    {
-        plot(y, DEFAULT_MARKER, DEFAULT_LEGEND, alpha, DEFAULT_COLOR, linewidth, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const qreal& alpha, const qreal& markersize)
-    {
-        plot(y, DEFAULT_MARKER, DEFAULT_LEGEND, alpha, DEFAULT_COLOR, DEFAULT_LINEW, DEFAULT_EDGECOLOR, markersize);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QColor& color, const quint32& linewidth)
-    {
-        plot(y, DEFAULT_MARKER, DEFAULT_LEGEND, DEFAULT_ALPHA, color, linewidth, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QColor& color, const qreal& markersize)
-    {
-        plot(y, DEFAULT_MARKER, DEFAULT_LEGEND, DEFAULT_ALPHA, color, DEFAULT_LINEW, DEFAULT_EDGECOLOR, markersize);
-    }
-
-    /* Overloaded plot(y) methods with 4 parameters */
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const qreal& alpha)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(y, cmd1, cmd2, alpha, DEFAULT_COLOR, DEFAULT_LINEW, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-        else
-            plot(y, cmd2, cmd1, alpha, DEFAULT_COLOR, DEFAULT_LINEW, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const QColor& color)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(y, cmd1, cmd2, DEFAULT_ALPHA, color, DEFAULT_LINEW, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-        else
-            plot(y, cmd2, cmd1, DEFAULT_ALPHA, color, DEFAULT_LINEW, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const quint32& linewidth)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(y, cmd1, cmd2, DEFAULT_ALPHA, DEFAULT_COLOR, linewidth, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-        else
-            plot(y, cmd2, cmd1, DEFAULT_ALPHA, DEFAULT_COLOR, linewidth, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const qreal& alpha, const QColor& color)
-    {
-        if (_is_marker(cmd1))
-            plot(y, cmd1, DEFAULT_LEGEND, alpha, color, DEFAULT_LINEW, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-        else
-            plot(y, DEFAULT_MARKER, cmd1, alpha, color, DEFAULT_LINEW, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const qreal& alpha, const quint32& linewidth)
-    {
-        if (_is_marker(cmd1))
-            plot(y, cmd1, DEFAULT_LEGEND, alpha, DEFAULT_COLOR, linewidth, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-        else
-            plot(y, DEFAULT_MARKER, cmd1, alpha, DEFAULT_COLOR, linewidth, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const qreal& alpha, const qreal& markersize)
-    {
-        if (_is_marker(cmd1))
-            plot(y, cmd1, DEFAULT_LEGEND, alpha, DEFAULT_COLOR, DEFAULT_LINEW, DEFAULT_EDGECOLOR, markersize);
-        else
-            plot(y, DEFAULT_MARKER, cmd1, alpha, DEFAULT_COLOR, DEFAULT_LINEW, DEFAULT_EDGECOLOR, markersize);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const QColor& color, const QColor& edgecolor)
-    {
-        if (_is_marker(cmd1))
-            plot(y, cmd1, DEFAULT_LEGEND, DEFAULT_ALPHA, color, DEFAULT_LINEW, edgecolor, DEFAULT_MARKERSZ);
-        else
-            plot(y, DEFAULT_MARKER, cmd1, DEFAULT_ALPHA, color, DEFAULT_LINEW, edgecolor, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const QColor& color, const quint32& linewidth)
-    {
-        if (_is_marker(cmd1))
-            plot(y, cmd1, DEFAULT_LEGEND, DEFAULT_ALPHA, color, linewidth, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-        else
-            plot(y, DEFAULT_MARKER, cmd1, DEFAULT_ALPHA, color, linewidth, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const QColor& color, const qreal& markersize)
-    {
-        if (_is_marker(cmd1))
-            plot(y, cmd1, DEFAULT_LEGEND, DEFAULT_ALPHA, color, DEFAULT_LINEW, DEFAULT_EDGECOLOR, markersize);
-        else
-            plot(y, DEFAULT_MARKER, cmd1, DEFAULT_ALPHA, color, DEFAULT_LINEW, DEFAULT_EDGECOLOR, markersize);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const quint32& linewidth, const qreal& markersize)
-    {
-        if (_is_marker(cmd1))
-            plot(y, cmd1, DEFAULT_LEGEND, DEFAULT_ALPHA, DEFAULT_COLOR, linewidth, DEFAULT_EDGECOLOR, markersize);
-        else
-            plot(y, DEFAULT_MARKER, cmd1, DEFAULT_ALPHA, DEFAULT_COLOR, linewidth, DEFAULT_EDGECOLOR, markersize);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const quint32& linewidth, const QColor& edgecolor)
-    {
-        if (_is_marker(cmd1))
-            plot(y, cmd1, DEFAULT_LEGEND, DEFAULT_ALPHA, DEFAULT_COLOR, linewidth, edgecolor, DEFAULT_MARKERSZ);
-        else
-            plot(y, DEFAULT_MARKER, cmd1, DEFAULT_ALPHA, DEFAULT_COLOR, linewidth, edgecolor, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const qreal& alpha, const QColor& color, const quint32& linewidth)
-    {
-        plot(y, DEFAULT_MARKER, DEFAULT_LEGEND, alpha, color, linewidth, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    /* Overloaded plot(y) methods with 5 parameters */
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const qreal& alpha, const QColor& color)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(y, cmd1, cmd2, alpha, color, DEFAULT_LINEW, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-        else
-            plot(y, cmd2, cmd1, alpha, color, DEFAULT_LINEW, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const qreal& alpha, const quint32& linewidth)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(y, cmd1, cmd2, alpha, DEFAULT_COLOR, linewidth, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-        else
-            plot(y, cmd2, cmd1, alpha, DEFAULT_COLOR, linewidth, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const qreal& alpha, const qreal& markersize)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(y, cmd1, cmd2, alpha, DEFAULT_COLOR, DEFAULT_LINEW, DEFAULT_EDGECOLOR, markersize);
-        else
-            plot(y, cmd2, cmd1, alpha, DEFAULT_COLOR, DEFAULT_LINEW, DEFAULT_EDGECOLOR, markersize);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const QColor& color, const QColor& edgecolor)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(y, cmd1, cmd2, DEFAULT_ALPHA, color, DEFAULT_LINEW, edgecolor, DEFAULT_MARKERSZ);
-        else
-            plot(y, cmd2, cmd1, DEFAULT_ALPHA, color, DEFAULT_LINEW, edgecolor, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const QColor& color, const quint32& linewidth)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(y, cmd1, cmd2, DEFAULT_ALPHA, color, linewidth, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-        else
-            plot(y, cmd2, cmd1, DEFAULT_ALPHA, color, linewidth, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const QColor& color, const qreal& markersize)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(y, cmd1, cmd2, DEFAULT_ALPHA, color, DEFAULT_LINEW, DEFAULT_EDGECOLOR, markersize);
-        else
-            plot(y, cmd2, cmd1, DEFAULT_ALPHA, color, DEFAULT_LINEW, DEFAULT_EDGECOLOR, markersize);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const quint32& linewidth, const qreal& markersize)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(y, cmd1, cmd2, DEFAULT_ALPHA, DEFAULT_COLOR, linewidth, DEFAULT_EDGECOLOR, markersize);
-        else
-            plot(y, cmd2, cmd1, DEFAULT_ALPHA, DEFAULT_COLOR, linewidth, DEFAULT_EDGECOLOR, markersize);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const quint32& linewidth, const QColor& edgecolor)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(y, cmd1, cmd2, DEFAULT_ALPHA, DEFAULT_COLOR, linewidth, edgecolor, DEFAULT_MARKERSZ);
-        else
-            plot(y, cmd2, cmd1, DEFAULT_ALPHA, DEFAULT_COLOR, linewidth, edgecolor, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const qreal& alpha, const QColor& color, const QColor& edgecolor)
-    {
-        if (_is_marker(cmd1))
-            plot(y, cmd1, DEFAULT_LEGEND, alpha, color, DEFAULT_LINEW, edgecolor, DEFAULT_MARKERSZ);
-        else
-            plot(y, DEFAULT_MARKER, cmd1, alpha, color, DEFAULT_LINEW, edgecolor, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const qreal& alpha, const QColor& color, const qreal& markersize)
-    {
-        if (_is_marker(cmd1))
-            plot(y, cmd1, DEFAULT_LEGEND, alpha, color, DEFAULT_LINEW, DEFAULT_EDGECOLOR, markersize);
-        else
-            plot(y, DEFAULT_MARKER, cmd1, alpha, color, DEFAULT_LINEW, DEFAULT_EDGECOLOR, markersize);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const qreal& alpha, const QColor& color, const quint32& linewidth)
-    {
-        if (_is_marker(cmd1))
-            plot(y, cmd1, DEFAULT_LEGEND, alpha, color, linewidth, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-        else
-            plot(y, DEFAULT_MARKER, cmd1, alpha, color, linewidth, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const qreal& alpha, const quint32& linewidth, const qreal& markersize)
-    {
-        if (_is_marker(cmd1))
-            plot(y, cmd1, DEFAULT_LEGEND, alpha, DEFAULT_COLOR, linewidth, DEFAULT_EDGECOLOR, markersize);
-        else
-            plot(y, DEFAULT_MARKER, cmd1, alpha, DEFAULT_COLOR, linewidth, DEFAULT_EDGECOLOR, markersize);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const qreal& alpha, const quint32& linewidth, const QColor& edgecolor)
-    {
-        if (_is_marker(cmd1))
-            plot(y, cmd1, DEFAULT_LEGEND, alpha, DEFAULT_COLOR, linewidth, edgecolor, DEFAULT_MARKERSZ);
-        else
-            plot(y, DEFAULT_MARKER, cmd1, alpha, DEFAULT_COLOR, linewidth, edgecolor, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const QColor& color, const QColor& edgecolor, const qreal& markersize)
-    {
-        if (_is_marker(cmd1))
-            plot(y, cmd1, DEFAULT_LEGEND, DEFAULT_ALPHA, color, DEFAULT_LINEW, edgecolor, markersize);
-        else
-            plot(y, DEFAULT_MARKER, cmd1, DEFAULT_ALPHA, color, DEFAULT_LINEW, edgecolor, markersize);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const QColor& color, const quint32& linewidth, const qreal& markersize)
-    {
-        if (_is_marker(cmd1))
-            plot(y, cmd1, DEFAULT_LEGEND, DEFAULT_ALPHA, color, linewidth, DEFAULT_EDGECOLOR, markersize);
-        else
-            plot(y, DEFAULT_MARKER, cmd1, DEFAULT_ALPHA, color, linewidth, DEFAULT_EDGECOLOR, markersize);
-    }
-
-    /* Overloaded plot(y) methods with 6 parameters */
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const qreal& alpha, const QColor& color, const QColor& edgecolor)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(y, cmd1, cmd2, alpha, color, DEFAULT_LINEW, edgecolor, DEFAULT_MARKERSZ);
-        else
-            plot(y, cmd2, cmd1, alpha, color, DEFAULT_LINEW, edgecolor, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const qreal& alpha, const QColor& color, const quint32& linewidth)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(y, cmd1, cmd2, alpha, color, linewidth, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-        else
-            plot(y, cmd2, cmd1, alpha, color, linewidth, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const qreal& alpha, const QColor& color, const qreal& markersize)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(y, cmd1, cmd2, alpha, color, DEFAULT_LINEW, DEFAULT_EDGECOLOR, markersize);
-        else
-            plot(y, cmd2, cmd1, alpha, color, DEFAULT_LINEW, DEFAULT_EDGECOLOR, markersize);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const qreal& alpha, const quint32& linewidth, const qreal& markersize)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(y, cmd1, cmd2, alpha, DEFAULT_COLOR, linewidth, DEFAULT_EDGECOLOR, markersize);
-        else
-            plot(y, cmd2, cmd1, alpha, DEFAULT_COLOR, linewidth, DEFAULT_EDGECOLOR, markersize);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const QColor& color, const quint32& linewidth, const QColor& edgecolor)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(y, cmd1, cmd2, DEFAULT_ALPHA, color, linewidth, edgecolor, DEFAULT_MARKERSZ);
-        else
-            plot(y, cmd2, cmd1, DEFAULT_ALPHA, color, linewidth, edgecolor, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const QColor& color, const QColor& edgecolor, const qreal& markersize)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(y, cmd1, cmd2, DEFAULT_ALPHA, color, DEFAULT_LINEW, edgecolor, markersize);
-        else
-            plot(y, cmd2, cmd1, DEFAULT_ALPHA, color, DEFAULT_LINEW, edgecolor, markersize);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const QColor& color, const quint32& linewidth, const qreal& markersize)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(y, cmd1, cmd2, DEFAULT_ALPHA, color, linewidth, DEFAULT_EDGECOLOR, markersize);
-        else
-            plot(y, cmd2, cmd1, DEFAULT_ALPHA, color, linewidth, DEFAULT_EDGECOLOR, markersize);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1,const qreal& alpha, const QColor& color, const quint32& linewidth, const QColor& edgecolor)
-    {
-        if (_is_marker(cmd1))
-            plot(y, cmd1, DEFAULT_LEGEND, alpha, color, linewidth, edgecolor, DEFAULT_MARKERSZ);
-        else
-            plot(y, DEFAULT_MARKER, cmd1, alpha, color, linewidth, edgecolor, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const qreal& alpha, const QColor& color, const QColor& edgecolor, const qreal& markersize)
-    {
-        if (_is_marker(cmd1))
-            plot(y, cmd1, DEFAULT_LEGEND, alpha, color, DEFAULT_LINEW, edgecolor, markersize);
-        else
-            plot(y, DEFAULT_MARKER, cmd1, alpha, color, DEFAULT_LINEW, edgecolor, markersize);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const qreal& alpha, const QColor& color, const quint32& linewidth, const qreal& markersize)
-    {
-        if (_is_marker(cmd1))
-            plot(y, cmd1, DEFAULT_LEGEND, alpha, color, linewidth, DEFAULT_EDGECOLOR, markersize);
-        else
-            plot(y, DEFAULT_MARKER, cmd1, alpha, color, linewidth, DEFAULT_EDGECOLOR, markersize);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const QColor& color, const quint32& linewidth, const QColor& edgecolor, const qreal& markersize)
-    {
-        if (_is_marker(cmd1))
-            plot(y, cmd1, DEFAULT_LEGEND, DEFAULT_ALPHA, color, linewidth, edgecolor, markersize);
-        else
-            plot(y, DEFAULT_MARKER, cmd1, DEFAULT_ALPHA, color, linewidth, edgecolor, markersize);
-    }
-
-    /* Overloaded plot(y) methods with 7 parameters */
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const qreal& alpha, const QColor& color, const quint32& linewidth, const QColor& edgecolor)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(y, cmd1, cmd2, alpha, color, linewidth, edgecolor, DEFAULT_MARKERSZ);
-        else
-            plot(y, cmd2, cmd1, alpha, color, linewidth, edgecolor, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const qreal& alpha, const QColor& color, const QColor& edgecolor, const qreal& markersize)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(y, cmd1, cmd2, alpha, color, DEFAULT_LINEW, edgecolor, markersize);
-        else
-            plot(y, cmd2, cmd1, alpha, color, DEFAULT_LINEW, edgecolor, markersize);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const qreal& alpha, const QColor& color, const quint32& linewidth, const qreal& markersize)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(y, cmd1, cmd2, alpha, color, linewidth, DEFAULT_EDGECOLOR, markersize);
-        else
-            plot(y, cmd2, cmd1, alpha, color, linewidth, DEFAULT_EDGECOLOR, markersize);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const QColor& color, const quint32& linewidth, const QColor& edgecolor, const qreal& markersize)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(y, cmd1, DEFAULT_LEGEND, DEFAULT_ALPHA, color, linewidth, edgecolor, markersize);
-        else
-            plot(y, DEFAULT_MARKER, cmd1, DEFAULT_ALPHA, color, linewidth, edgecolor, markersize);
-    }
-
-    void plot(const Eigen::ArrayXf& y, const QString& cmd1, const qreal& alpha, const QColor& color, const quint32& linewidth, const QColor& edgecolor, const qreal& markersize)
-    {
-        if (_is_marker(cmd1))
-            plot(y, cmd1, DEFAULT_LEGEND, alpha, color, linewidth, edgecolor, markersize);
-        else
-            plot(y, DEFAULT_MARKER, cmd1, alpha, color, linewidth, edgecolor, markersize);
-    }
-
-    /* Overloaded plot(x,y) methods with 2-3 parameters */
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y)
-    {
-        plot(x, y, DEFAULT_MARKER, DEFAULT_LEGEND, DEFAULT_ALPHA, DEFAULT_COLOR, DEFAULT_LINEW, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1)
-    {
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, DEFAULT_LEGEND, DEFAULT_ALPHA, DEFAULT_COLOR, DEFAULT_LINEW, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-        else
-            plot(x, y, DEFAULT_MARKER, cmd1, DEFAULT_ALPHA, DEFAULT_COLOR, DEFAULT_LINEW, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const qreal& alpha)
-    {
-        plot(x, y, DEFAULT_MARKER, DEFAULT_LEGEND, alpha, DEFAULT_COLOR, DEFAULT_LINEW, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QColor& color)
-    {
-        plot(x, y, DEFAULT_MARKER, DEFAULT_LEGEND, DEFAULT_ALPHA, color, DEFAULT_LINEW, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const quint32& linewidth)
-    {
-        plot(x, y, DEFAULT_MARKER, DEFAULT_LEGEND, DEFAULT_ALPHA, DEFAULT_COLOR, linewidth, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    /* Overloaded plot(x,y) methods with 4 parameters */
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, cmd2, DEFAULT_ALPHA, DEFAULT_COLOR, DEFAULT_LINEW, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-        else
-            plot(x, y, cmd2, cmd1, DEFAULT_ALPHA, DEFAULT_COLOR, DEFAULT_LINEW, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const qreal& alpha)
-    {
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, DEFAULT_LEGEND, alpha, DEFAULT_COLOR, DEFAULT_LINEW, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-        else
-            plot(x, y, DEFAULT_MARKER, cmd1, alpha, DEFAULT_COLOR, DEFAULT_LINEW, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const QColor& color)
-    {
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, DEFAULT_LEGEND, DEFAULT_ALPHA, color, DEFAULT_LINEW, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-        else
-            plot(x, y, DEFAULT_MARKER, cmd1, DEFAULT_ALPHA, color, DEFAULT_LINEW, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const quint32& linewidth)
-    {
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, DEFAULT_LEGEND, DEFAULT_ALPHA, DEFAULT_COLOR, linewidth, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-        else
-            plot(x, y, DEFAULT_MARKER, cmd1, DEFAULT_ALPHA, DEFAULT_COLOR, linewidth, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const qreal& alpha, const QColor& color)
-    {
-        plot(x, y, DEFAULT_MARKER, DEFAULT_LEGEND, alpha, color, DEFAULT_LINEW, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const qreal& alpha, const quint32& linewidth)
-    {
-        plot(x, y, DEFAULT_MARKER, DEFAULT_LEGEND, alpha, DEFAULT_COLOR, linewidth, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const qreal& alpha, const qreal& markersize)
-    {
-        plot(x, y, DEFAULT_MARKER, DEFAULT_LEGEND, alpha, DEFAULT_COLOR, DEFAULT_LINEW, DEFAULT_EDGECOLOR, markersize);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QColor& color, const quint32& linewidth)
-    {
-        plot(x, y, DEFAULT_MARKER, DEFAULT_LEGEND, DEFAULT_ALPHA, color, linewidth, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QColor& color, const qreal& markersize)
-    {
-        plot(x, y, DEFAULT_MARKER, DEFAULT_LEGEND, DEFAULT_ALPHA, color, DEFAULT_LINEW, DEFAULT_EDGECOLOR, markersize);
-    }
-
-    /* Overloaded plot(x,y) methods with 5 parameters */
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const qreal& alpha)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, cmd2, alpha, DEFAULT_COLOR, DEFAULT_LINEW, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-        else
-            plot(x, y, cmd2, cmd1, alpha, DEFAULT_COLOR, DEFAULT_LINEW, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const QColor& color)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, cmd2, DEFAULT_ALPHA, color, DEFAULT_LINEW, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-        else
-            plot(x, y, cmd2, cmd1, DEFAULT_ALPHA, color, DEFAULT_LINEW, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const quint32& linewidth)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, cmd2, DEFAULT_ALPHA, DEFAULT_COLOR, linewidth, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-        else
-            plot(x, y, cmd2, cmd1, DEFAULT_ALPHA, DEFAULT_COLOR, linewidth, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const qreal& alpha, const QColor& color)
-    {
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, DEFAULT_LEGEND, alpha, color, DEFAULT_LINEW, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-        else
-            plot(x, y, DEFAULT_MARKER, cmd1, alpha, color, DEFAULT_LINEW, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const qreal& alpha, const quint32& linewidth)
-    {
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, DEFAULT_LEGEND, alpha, DEFAULT_COLOR, linewidth, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-        else
-            plot(x, y, DEFAULT_MARKER, cmd1, alpha, DEFAULT_COLOR, linewidth, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const qreal& alpha, const qreal& markersize)
-    {
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, DEFAULT_LEGEND, alpha, DEFAULT_COLOR, DEFAULT_LINEW, DEFAULT_EDGECOLOR, markersize);
-        else
-            plot(x, y, DEFAULT_MARKER, cmd1, alpha, DEFAULT_COLOR, DEFAULT_LINEW, DEFAULT_EDGECOLOR, markersize);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const QColor& color, const QColor& edgecolor)
-    {
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, DEFAULT_LEGEND, DEFAULT_ALPHA, color, DEFAULT_LINEW, edgecolor, DEFAULT_MARKERSZ);
-        else
-            plot(x, y, DEFAULT_MARKER, cmd1, DEFAULT_ALPHA, color, DEFAULT_LINEW, edgecolor, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const QColor& color, const quint32& linewidth)
-    {
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, DEFAULT_LEGEND, DEFAULT_ALPHA, color, linewidth, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-        else
-            plot(x, y, DEFAULT_MARKER, cmd1, DEFAULT_ALPHA, color, linewidth, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const QColor& color, const qreal& markersize)
-    {
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, DEFAULT_LEGEND, DEFAULT_ALPHA, color, DEFAULT_LINEW, DEFAULT_EDGECOLOR, markersize);
-        else
-            plot(x, y, DEFAULT_MARKER, cmd1, DEFAULT_ALPHA, color, DEFAULT_LINEW, DEFAULT_EDGECOLOR, markersize);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const quint32& linewidth, const qreal& markersize)
-    {
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, DEFAULT_LEGEND, DEFAULT_ALPHA, DEFAULT_COLOR, linewidth, DEFAULT_EDGECOLOR, markersize);
-        else
-            plot(x, y, DEFAULT_MARKER, cmd1, DEFAULT_ALPHA, DEFAULT_COLOR, linewidth, DEFAULT_EDGECOLOR, markersize);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const quint32& linewidth, const QColor& edgecolor)
-    {
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, DEFAULT_LEGEND, DEFAULT_ALPHA, DEFAULT_COLOR, linewidth, edgecolor, DEFAULT_MARKERSZ);
-        else
-            plot(x, y, DEFAULT_MARKER, cmd1, DEFAULT_ALPHA, DEFAULT_COLOR, linewidth, edgecolor, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const qreal& alpha, const QColor& color, const quint32& linewidth)
-    {
-        plot(x, y, DEFAULT_MARKER, DEFAULT_LEGEND, alpha, color, linewidth, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    /* Overloaded plot(x,y) methods with 6 parameters */
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const qreal& alpha, const QColor& color)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, cmd2, alpha, color, DEFAULT_LINEW, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-        else
-            plot(x, y, cmd2, cmd1, alpha, color, DEFAULT_LINEW, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const qreal& alpha, const quint32& linewidth)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, cmd2, alpha, DEFAULT_COLOR, linewidth, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-        else
-            plot(x, y, cmd2, cmd1, alpha, DEFAULT_COLOR, linewidth, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const qreal& alpha, const qreal& markersize)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, cmd2, alpha, DEFAULT_COLOR, DEFAULT_LINEW, DEFAULT_EDGECOLOR, markersize);
-        else
-            plot(x, y, cmd2, cmd1, alpha, DEFAULT_COLOR, DEFAULT_LINEW, DEFAULT_EDGECOLOR, markersize);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const QColor& color, const QColor& edgecolor)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, cmd2, DEFAULT_ALPHA, color, DEFAULT_LINEW, edgecolor, DEFAULT_MARKERSZ);
-        else
-            plot(x, y, cmd2, cmd1, DEFAULT_ALPHA, color, DEFAULT_LINEW, edgecolor, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const QColor& color, const quint32& linewidth)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, cmd2, DEFAULT_ALPHA, color, linewidth, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-        else
-            plot(x, y, cmd2, cmd1, DEFAULT_ALPHA, color, linewidth, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const QColor& color, const qreal& markersize)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, cmd2, DEFAULT_ALPHA, color, DEFAULT_LINEW, DEFAULT_EDGECOLOR, markersize);
-        else
-            plot(x, y, cmd2, cmd1, DEFAULT_ALPHA, color, DEFAULT_LINEW, DEFAULT_EDGECOLOR, markersize);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const quint32& linewidth, const qreal& markersize)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, cmd2, DEFAULT_ALPHA, DEFAULT_COLOR, linewidth, DEFAULT_EDGECOLOR, markersize);
-        else
-            plot(x, y, cmd2, cmd1, DEFAULT_ALPHA, DEFAULT_COLOR, linewidth, DEFAULT_EDGECOLOR, markersize);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const quint32& linewidth, const QColor& edgecolor)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, cmd2, DEFAULT_ALPHA, DEFAULT_COLOR, linewidth, edgecolor, DEFAULT_MARKERSZ);
-        else
-            plot(x, y, cmd2, cmd1, DEFAULT_ALPHA, DEFAULT_COLOR, linewidth, edgecolor, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const qreal& alpha, const QColor& color, const QColor& edgecolor)
-    {
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, DEFAULT_LEGEND, alpha, color, DEFAULT_LINEW, edgecolor, DEFAULT_MARKERSZ);
-        else
-            plot(x, y, DEFAULT_MARKER, cmd1, alpha, color, DEFAULT_LINEW, edgecolor, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const qreal& alpha, const QColor& color, const qreal& markersize)
-    {
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, DEFAULT_LEGEND, alpha, color, DEFAULT_LINEW, DEFAULT_EDGECOLOR, markersize);
-        else
-            plot(x, y, DEFAULT_MARKER, cmd1, alpha, color, DEFAULT_LINEW, DEFAULT_EDGECOLOR, markersize);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const qreal& alpha, const QColor& color, const quint32& linewidth)
-    {
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, DEFAULT_LEGEND, alpha, color, linewidth, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-        else
-            plot(x, y, DEFAULT_MARKER, cmd1, alpha, color, linewidth, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const qreal& alpha, const quint32& linewidth, const qreal& markersize)
-    {
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, DEFAULT_LEGEND, alpha, DEFAULT_COLOR, linewidth, DEFAULT_EDGECOLOR, markersize);
-        else
-            plot(x, y, DEFAULT_MARKER, cmd1, alpha, DEFAULT_COLOR, linewidth, DEFAULT_EDGECOLOR, markersize);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const qreal& alpha, const quint32& linewidth, const QColor& edgecolor)
-    {
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, DEFAULT_LEGEND, alpha, DEFAULT_COLOR, linewidth, edgecolor, DEFAULT_MARKERSZ);
-        else
-            plot(x, y, DEFAULT_MARKER, cmd1, alpha, DEFAULT_COLOR, linewidth, edgecolor, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const QColor& color, const QColor& edgecolor, const qreal& markersize)
-    {
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, DEFAULT_LEGEND, DEFAULT_ALPHA, color, DEFAULT_LINEW, edgecolor, markersize);
-        else
-            plot(x, y, DEFAULT_MARKER, cmd1, DEFAULT_ALPHA, color, DEFAULT_LINEW, edgecolor, markersize);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const QColor& color, const quint32& linewidth, const qreal& markersize)
-    {
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, DEFAULT_LEGEND, DEFAULT_ALPHA, color, linewidth, DEFAULT_EDGECOLOR, markersize);
-        else
-            plot(x, y, DEFAULT_MARKER, cmd1, DEFAULT_ALPHA, color, linewidth, DEFAULT_EDGECOLOR, markersize);
-    }
-
-    /* Overloaded plot(x,y) methods with 7 parameters */
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const qreal& alpha, const QColor& color, const QColor& edgecolor)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, cmd2, alpha, color, DEFAULT_LINEW, edgecolor, DEFAULT_MARKERSZ);
-        else
-            plot(x, y, cmd2, cmd1, alpha, color, DEFAULT_LINEW, edgecolor, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const qreal& alpha, const QColor& color, const quint32& linewidth)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, cmd2, alpha, color, linewidth, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-        else
-            plot(x, y, cmd2, cmd1, alpha, color, linewidth, DEFAULT_EDGECOLOR, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const qreal& alpha, const QColor& color, const qreal& markersize)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, cmd2, alpha, color, DEFAULT_LINEW, DEFAULT_EDGECOLOR, markersize);
-        else
-            plot(x, y, cmd2, cmd1, alpha, color, DEFAULT_LINEW, DEFAULT_EDGECOLOR, markersize);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const qreal& alpha, const quint32& linewidth, const qreal& markersize)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, cmd2, alpha, DEFAULT_COLOR, linewidth, DEFAULT_EDGECOLOR, markersize);
-        else
-            plot(x, y, cmd2, cmd1, alpha, DEFAULT_COLOR, linewidth, DEFAULT_EDGECOLOR, markersize);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const QColor& color, const quint32& linewidth, const QColor& edgecolor)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, cmd2, DEFAULT_ALPHA, color, linewidth, edgecolor, DEFAULT_MARKERSZ);
-        else
-            plot(x, y, cmd2, cmd1, DEFAULT_ALPHA, color, linewidth, edgecolor, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const QColor& color, const QColor& edgecolor, const qreal& markersize)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, cmd2, DEFAULT_ALPHA, color, DEFAULT_LINEW, edgecolor, markersize);
-        else
-            plot(x, y, cmd2, cmd1, DEFAULT_ALPHA, color, DEFAULT_LINEW, edgecolor, markersize);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const QColor& color, const quint32& linewidth, const qreal& markersize)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, cmd2, DEFAULT_ALPHA, color, linewidth, DEFAULT_EDGECOLOR, markersize);
-        else
-            plot(x, y, cmd2, cmd1, DEFAULT_ALPHA, color, linewidth, DEFAULT_EDGECOLOR, markersize);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1,const qreal& alpha, const QColor& color, const quint32& linewidth, const QColor& edgecolor)
-    {
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, DEFAULT_LEGEND, alpha, color, linewidth, edgecolor, DEFAULT_MARKERSZ);
-        else
-            plot(x, y, DEFAULT_MARKER, cmd1, alpha, color, linewidth, edgecolor, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const qreal& alpha, const QColor& color, const QColor& edgecolor, const qreal& markersize)
-    {
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, DEFAULT_LEGEND, alpha, color, DEFAULT_LINEW, edgecolor, markersize);
-        else
-            plot(x, y, DEFAULT_MARKER, cmd1, alpha, color, DEFAULT_LINEW, edgecolor, markersize);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const qreal& alpha, const QColor& color, const quint32& linewidth, const qreal& markersize)
-    {
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, DEFAULT_LEGEND, alpha, color, linewidth, DEFAULT_EDGECOLOR, markersize);
-        else
-            plot(x, y, DEFAULT_MARKER, cmd1, alpha, color, linewidth, DEFAULT_EDGECOLOR, markersize);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const QColor& color, const quint32& linewidth, const QColor& edgecolor, const qreal& markersize)
-    {
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, DEFAULT_LEGEND, DEFAULT_ALPHA, color, linewidth, edgecolor, markersize);
-        else
-            plot(x, y, DEFAULT_MARKER, cmd1, DEFAULT_ALPHA, color, linewidth, edgecolor, markersize);
-    }
-
-    /* Overloaded plot(x,y) methods with 8 parameters */
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const qreal& alpha, const QColor& color, const quint32& linewidth, const QColor& edgecolor)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, cmd2, alpha, color, linewidth, edgecolor, DEFAULT_MARKERSZ);
-        else
-            plot(x, y, cmd2, cmd1, alpha, color, linewidth, edgecolor, DEFAULT_MARKERSZ);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const qreal& alpha, const QColor& color, const QColor& edgecolor, const qreal& markersize)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, cmd2, alpha, color, DEFAULT_LINEW, edgecolor, markersize);
-        else
-            plot(x, y, cmd2, cmd1, alpha, color, DEFAULT_LINEW, edgecolor, markersize);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const qreal& alpha, const QColor& color, const quint32& linewidth, const qreal& markersize)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, cmd2, alpha, color, linewidth, DEFAULT_EDGECOLOR, markersize);
-        else
-            plot(x, y, cmd2, cmd1, alpha, color, linewidth, DEFAULT_EDGECOLOR, markersize);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const QString& cmd2, const QColor& color, const quint32& linewidth, const QColor& edgecolor, const qreal& markersize)
-    {
-        _check_cmds_are_good(cmd1, cmd2);
-
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, DEFAULT_LEGEND, DEFAULT_ALPHA, color, linewidth, edgecolor, markersize);
-        else
-            plot(x, y, DEFAULT_MARKER, cmd1, DEFAULT_ALPHA, color, linewidth, edgecolor, markersize);
-    }
-
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const QString& cmd1, const qreal& alpha, const QColor& color, const quint32& linewidth, const QColor& edgecolor, const qreal& markersize)
-    {
-        if (_is_marker(cmd1))
-            plot(x, y, cmd1, DEFAULT_LEGEND, alpha, color, linewidth, edgecolor, markersize);
-        else
-            plot(x, y, DEFAULT_MARKER, cmd1, alpha, color, linewidth, edgecolor, markersize);
-    }
-
-    /* plot(y): this implementation handles calls that do not specify X data.
-     * For that purpose, this method fabricates the data needed to plot Y series
-     * correctly on the chart.
-     */
-    void plot(const Eigen::ArrayXf& y, const QString& marker, const QString& label,
-              const qreal& alpha, const QColor& color, const quint32& linewidth,
-              const QColor& edgecolor, const qreal& markersize)
+  
+    template<class T, class ... Args>
+    typename std::enable_if<!is_matrix_expression<T>::value>::type plot(const Eigen::ArrayXf& y, const T& arg1, const Args&... args)
     {
 #if (DEBUG > 0) && (DEBUG < 2)
         qDebug() << "plot(y): marker=" << marker << " alpha=" << alpha <<
-                    " color=" << color << " edgecolor=" << edgecolor <<
-                    " linewidth=" << linewidth << " markersize=" << markersize;
+            " color=" << color << " edgecolor=" << edgecolor <<
+            " linewidth=" << linewidth << " markersize=" << markersize;
 #endif
         if (y.rows() == 0)
         {
@@ -1320,12 +548,12 @@ public:
             x_value += x_inc;
 
 #if (DEBUG > 1) && (DEBUG < 3)
-        qDebug() << "plot(y): generated x[" << i << "]=" << x[i];
+            qDebug() << "plot(y): generated x[" << i << "]=" << x[i];
 #endif
         }
-
-        plot(x, y, marker, label, alpha, color, linewidth, edgecolor, markersize);
+        plot(x, y, arg1, args...);
     }
+
 
     /* plot(): called when user needs to put data on a chart.
      * x: an array that stores x axis values.
@@ -1337,11 +565,19 @@ public:
      * linewidth: defines the width of the pen used to draw "-" marker.
      * markersize: defines the size of "o" marker.
      */
-    void plot(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y,
-              const QString& marker, const QString& label,
-              const qreal& alpha, const QColor& color, const quint32& linewidth,
-              const QColor& edgecolor, const qreal& markersize)
+
+    template<class T, class ... Args>
+    typename std::enable_if<is_matrix_expression<T>::value>::type plot(const Eigen::ArrayXf& x, const T& y, const Args&... args)
     {
+        const QString marker = GetKeywordInputDefault<tag::marker>(DEFAULT_MARKER, args...);
+        const QString label  = GetKeywordInputDefault<tag::label>(DEFAULT_LEGEND, args...);
+        const qreal& alpha = GetKeywordInputDefault<tag::alpha>(DEFAULT_ALPHA, args...);
+        const QColor color = GetKeywordInputDefault<tag::color>(DEFAULT_COLOR, args...);
+        const quint32& linewidth = GetKeywordInputDefault<tag::linewidth>(DEFAULT_LINEW, args...);
+        const QColor edgecolor = GetKeywordInputDefault<tag::edgecolor>(DEFAULT_EDGECOLOR, args...);
+        const qreal& markersize = GetKeywordInputDefault<tag::markersize>(DEFAULT_MARKERSZ, args...);
+
+        
 #if (DEBUG > 0) && (DEBUG < 2)
         qDebug() << "plot(x,y): marker:" << marker << " alpha:" << alpha <<
                     " color:" << color << " edgecolor:" << edgecolor <<
