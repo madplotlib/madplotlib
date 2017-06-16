@@ -270,8 +270,8 @@ void test8()
 
     Eigen::ArrayXf noise = Eigen::ArrayXf::Random(50) * 2;
 
-    plt.plot(x, x.sqrt() - noise, marker=QString("s"), markersize = 0.7f, color=QColor(19, 154, 255), edgecolor=QColor(19, 154, 255)); // red squares without black edges
-    plt.plot(x, -x.sqrt() - noise, marker = QString("s"), markersize = 0.7f, color=QColor(255, 41, 5), edgecolor=QColor(255, 41, 5));    // blue squares without black edges
+    plt.plot(x, x.sqrt() - noise, marker=QString("s"), alpha = 0.7f, color=QColor(19, 154, 255), edgecolor=QColor(19, 154, 255)); // red squares without black edges
+    plt.plot(x, -x.sqrt() - noise, marker = QString("s"), alpha = 0.7f, color=QColor(255, 41, 5), edgecolor=QColor(255, 41, 5));    // blue squares without black edges
     plt.show();
 
 #ifdef SCRSHOT
