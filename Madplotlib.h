@@ -26,6 +26,20 @@
 
 #pragma once
 
+#ifndef PLT_ARG_NAMESPACE
+#define PLT_ARG_NAMESPACE
+#endif
+
+#ifdef _MSC_VER
+#if _MSC_VER >= 1900
+#define PLT_CONSTEXPR constexpr
+#else
+#define PLT_CONSTEXPR
+#endif
+#else
+#define PLT_CONSTEXPR constexpr
+#endif
+
 #define MO_KEYWORD_INPUT(name, type)                                                                                                  \
 namespace tag{                                                                                                                        \
     struct name {                                                                                                                     \
@@ -46,7 +60,9 @@ namespace tag{                                                                  
         }                                                                                                                             \
     };                                                                                                                                \
 }                                                                                                                                     \
-static kwargs::TKeyword<tag::name>& _##name = kwargs::TKeyword<tag::name>::instance;
+namespace PLT_ARG_NAMESPACE {                                                                                                         \
+    static kwargs::TKeyword<tag::name>& name = kwargs::TKeyword<tag::name>::instance;                                                 \
+}
 
 
 #define MO_KEYWORD_OUTPUT(name, type)                                                                                                 \
@@ -69,7 +85,9 @@ namespace tag{                                                                  
         }                                                                                                                             \
     };                                                                                                                                \
 }                                                                                                                                     \
-static kwargs::TKeyword<name>& _##name = kwargs::TKeyword<name>::instance;
+namespace PLT_ARG_NAMESPACE {                                                                                                         \
+static kwargs::TKeyword<name>& name = kwargs::TKeyword<name>::instance;                                                               \
+}
 
 namespace kwargs {
     struct TaggedBase {};
@@ -117,17 +135,17 @@ typename Tag::VoidType GetKeyImpl() {
 }
 
 template <class T, class U>
-constexpr int CountTypeImpl(const U& value) {
+PLT_CONSTEXPR int CountTypeImpl(const U& value) {
     return std::is_same<T, U>::value ? 1 : 0;
 }
 
 template <class T, class U, class... Args>
-constexpr int CountTypeImpl(const U& value, const Args&... args) {
+PLT_CONSTEXPR int CountTypeImpl(const U& value, const Args&... args) {
     return CountTypeImpl<T, Args...>(args...) + (std::is_same<T, U>::value ? 1 : 0);
 }
 
 template <class T, class... Args>
-constexpr int CountType(const Args&... args) {
+PLT_CONSTEXPR int CountType(const Args&... args) {
     return CountTypeImpl<T, Args...>(args...);
 }
 
@@ -207,25 +225,6 @@ template<typename T, typename Enable = void>
 struct is_matrix_expression : std::false_type {};
 template<typename T>
 struct is_matrix_expression<T, decltype(std::declval<Eigen::ArrayXf>() = std::declval<T>(), void())> : std::true_type {};
-
-template<class Arg>
-constexpr bool detectExpressionArg(const Arg& arg) {
-    return is_matrix_expression<Arg>::value;
-}
-template<class Arg, class ... Args>
-constexpr bool detectExpressionArg(const Arg& arg, const Args&... args) {
-    return is_matrix_expression<Arg>::value ? true : detectExpressionArg(args...);
-}
-
-template<class Arg> typename std::enable_if<is_matrix_expression<Arg>::value>::type applyExpression(Eigen::ArrayXf& X, const Arg& Y)
-{
-    X = Y;
-}
-
-template<class Arg> typename std::enable_if<!is_matrix_expression<Arg>::value>::type applyExpression(Eigen::ArrayXf& X, const Arg& Y)
-{
-
-}
 
 /* Debug control */
 

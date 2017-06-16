@@ -84,9 +84,9 @@ void test3()
     Madplotlib plt;
     plt.title("Test 3: Multiple Data Series");
     plt.axis(0, 25, 0, 14);
-    plt.plot(x, y, _marker=QString("--"), _label=QString("label=Dashed Line"));
-    plt.plot(x, y+5, _label=QString("label=Default Line"), (quint32)4);
-    plt.plot(x, y+10, QString("."), _label=QString("label=Dotted Line"));
+    plt.plot(x, y, marker=QString("--"), label=QString("label=Dashed Line"));
+    plt.plot(x, y+5, label=QString("label=Default Line"), (quint32)4);
+    plt.plot(x, y+10, QString("."), label=QString("label=Dotted Line"));
     plt.legend(); // default position is "lower center"
     plt.show();
 
@@ -125,8 +125,8 @@ void test4()
     plt.title("Test 4: Random Scatter Plot");
     plt.locator_params("x", 10);
     plt.axis(-25, 100, -25, 100);
-    plt.plot(x, y, _marker=QString("o"), 0.7f, QColor(255, 0, 0), 8.0f); // red, 30% transparent, markersize 8
-    plt.plot(x2, y2, _marker=QString("o"), 0.5f, QColor(0, 0, 255));     // blue, 50% transparent
+    plt.plot(x, y, marker=QString("o"), 0.7f, QColor(255, 0, 0), 8.0f); // red, 30% transparent, markersize 8
+    plt.plot(x2, y2, marker=QString("o"), 0.5f, QColor(0, 0, 255));     // blue, 50% transparent
     plt.show();
 
 #ifdef SCRSHOT
@@ -191,10 +191,10 @@ void test6()
          105, 111, 120, 126, 120, 104,  85,  92;
 
     Madplotlib plt;
-    plt.plot(x, y, _color=QColor(0xFF2700));               // red
-    plt.plot(x, y, _marker=QString("o"), _color=QColor(0xFF2700));
-    plt.plot(x, y-40, _color=QColor(0x008FD5));            // blue
-    plt.plot(x, y-40, _marker=QString("o"), _color=QColor(0x008FD5));
+    plt.plot(x, y, color=QColor(0xFF2700));               // red
+    plt.plot(x, y, marker=QString("o"), color=QColor(0xFF2700));
+    plt.plot(x, y-40, color=QColor(0x008FD5));            // blue
+    plt.plot(x, y-40, marker=QString("o"), color=QColor(0x008FD5));
 
     plt.title("Test 6: Line + Scatter");
     plt.xlabel("X values");
@@ -240,7 +240,7 @@ void test7()
     // On Qt 7.5, Qt Charts has a bug spacing correctly categories on negative Y axis (-1, 1).
     // For now, drawing (y+1) will bypass that since the values will fall between (0, 2).
     plt.ylim(0, 2);
-    plt.plot(x, y+1, _marker=QString("o"), _alpha=1.f, _linewidth=2, _markersize=7.0f); // alpha=1.f, linewidth=2, markersize=7.f
+    plt.plot(x, y+1, marker=QString("o"), alpha=1.f, linewidth=2, markersize=7.0f); // alpha=1.f, linewidth=2, markersize=7.f
     plt.grid(true);
 
     plt.show();
@@ -265,13 +265,13 @@ void test8()
     Madplotlib plt;
     plt.title("Test 8: Line + Square Markers + Hidden Ticks");
     plt.axis("off");
-    plt.plot(x, x.sqrt(), _color=QColor(0, 0, 0));
-    plt.plot(x, -x.sqrt(), _color = QColor(0, 0, 0));
+    plt.plot(x, x.sqrt(), color=QColor(0, 0, 0));
+    plt.plot(x, -x.sqrt(), color = QColor(0, 0, 0));
 
     Eigen::ArrayXf noise = Eigen::ArrayXf::Random(50) * 2;
 
-    plt.plot(x, x.sqrt() - noise, _marker=QString("s"), _markersize = 0.7f, _color=QColor(19, 154, 255), _edgecolor=QColor(19, 154, 255)); // red squares without black edges
-    plt.plot(x, -x.sqrt() - noise, _marker = QString("s"), _markersize = 0.7f, _color=QColor(255, 41, 5), _edgecolor=QColor(255, 41, 5));    // blue squares without black edges
+    plt.plot(x, x.sqrt() - noise, marker=QString("s"), markersize = 0.7f, color=QColor(19, 154, 255), edgecolor=QColor(19, 154, 255)); // red squares without black edges
+    plt.plot(x, -x.sqrt() - noise, marker = QString("s"), markersize = 0.7f, color=QColor(255, 41, 5), edgecolor=QColor(255, 41, 5));    // blue squares without black edges
     plt.show();
 
 #ifdef SCRSHOT
@@ -345,7 +345,7 @@ void test10()
     // On Qt 7.5, Qt Charts has a bug spacing correctly categories on negative X axis (-3.1, 3.1).
     // For now, make sure you are using only positive X values to bypass that problem.
     plt.plot(X, C);
-    plt.plot(X, S, _marker=QString("--"));
+    plt.plot(X, S, marker=QString("--"));
     plt.xlim(0, 2*pi);
     plt.xticks(x_ticks, x_labels);
     plt.show();
