@@ -49,7 +49,7 @@ namespace tag{                                                                  
         typedef ConstRef    StorageType;                                                                                              \
         typedef const void* VoidType;                                                                                                 \
         template <typename T>                                                                                                         \
-        static constexpr bool AllowedType() { return std::is_same<Type, T>::value; }                                                  \
+        static PLT_CONSTEXPR bool AllowedType() { return std::is_same<Type, T>::value; }                                                  \
         static VoidType GetPtr(const Type& arg) {                                                                                     \
             return &arg;                                                                                                              \
         }                                                                                                                             \
@@ -74,7 +74,7 @@ namespace tag{                                                                  
         typedef Ref         StorageType;                                                                                              \
         typedef void*       VoidType;                                                                                                 \
         template <typename T>                                                                                                         \
-        static constexpr bool AllowedType() { return std::is_same<Type, T>::value; }                                                  \
+        static PLT_CONSTEXPR bool AllowedType() { return std::is_same<Type, T>::value; }                                                  \
         static VoidType GetPtr(Type& arg) {                                                                                           \
             return &arg;                                                                                                              \
         }                                                                                                                             \
@@ -150,7 +150,7 @@ PLT_CONSTEXPR int CountType(const Args&... args) {
 }
 
 template <size_t N, typename... Args>
-auto GetPositionalInput(Args&&... as) noexcept -> decltype(std::get<N>(std::forward_as_tuple(std::forward<Args>(as)...))) {
+auto GetPositionalInput(Args&&... as) -> decltype(std::get<N>(std::forward_as_tuple(std::forward<Args>(as)...))) {
     return std::get<N>(std::forward_as_tuple(std::forward<Args>(as)...));
 }
 
@@ -213,18 +213,27 @@ typename Tag::Type* GetKeywordOutputOptional(const Args&... args) {
 
 MO_KEYWORD_INPUT(x, Eigen::ArrayXf)
 MO_KEYWORD_INPUT(y, Eigen::ArrayXf)
-MO_KEYWORD_INPUT(marker, QString);
-MO_KEYWORD_INPUT(label, QString);
-MO_KEYWORD_INPUT(color, QColor);
-MO_KEYWORD_INPUT(linewidth, quint32);
-MO_KEYWORD_INPUT(alpha, qreal);
-MO_KEYWORD_INPUT(edgecolor, QColor);
-MO_KEYWORD_INPUT(markersize, qreal);
+MO_KEYWORD_INPUT(marker, QString)
+MO_KEYWORD_INPUT(label, QString)
+MO_KEYWORD_INPUT(color, QColor)
+MO_KEYWORD_INPUT(linewidth, quint32)
+MO_KEYWORD_INPUT(alpha, qreal)
+MO_KEYWORD_INPUT(edgecolor, QColor)
+MO_KEYWORD_INPUT(markersize, qreal)
 
-template<typename T, typename Enable = void>
+// The below works on MSVC 2015
+/*template<typename T, typename Enable = void>
 struct is_matrix_expression : std::false_type {};
 template<typename T>
-struct is_matrix_expression<T, decltype(std::declval<Eigen::ArrayXf>() = std::declval<T>(), void())> : std::true_type {};
+struct is_matrix_expression<T, decltype(std::declval<Eigen::ArrayXf>() = std::declval<T>(), void())> : std::true_type {};*/
+
+// Not sure if there are limitations to this but it seems to work on 2013
+template<typename Derived>
+struct is_matrix_expression
+	: std::is_base_of<Eigen::ArrayBase<std::decay_t<Derived> >, std::decay_t<Derived> >
+{};
+
+
 
 /* Debug control */
 
@@ -550,7 +559,7 @@ public:
             qDebug() << "plot(y): generated x[" << i << "]=" << x[i];
 #endif
         }
-        plot(x, y, arg1, args...);
+        plotXY(x, y, arg1, args...);
     }
 
 
@@ -564,9 +573,14 @@ public:
      * linewidth: defines the width of the pen used to draw "-" marker.
      * markersize: defines the size of "o" marker.
      */
+	template<class T, class ... Args>
+	typename std::enable_if<is_matrix_expression<T>::value>::type plot(const Eigen::ArrayXf& x, const T& y, const Args&... args)
+	{
+		plotXY(x, y, args...);
+	}
 
-    template<class T, class ... Args>
-    typename std::enable_if<is_matrix_expression<T>::value>::type plot(const Eigen::ArrayXf& x, const T& y, const Args&... args)
+    template<class ... Args>
+	void plotXY(const Eigen::ArrayXf& x, const Eigen::ArrayXf& y, const Args&... args)
     {
         const QString marker = GetKeywordInputDefault<tag::marker>(DEFAULT_MARKER, args...);
         const QString label  = GetKeywordInputDefault<tag::label>(DEFAULT_LEGEND, args...);
