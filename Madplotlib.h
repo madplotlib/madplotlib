@@ -269,6 +269,7 @@ public:
 #if (DEBUG > 0) && (DEBUG < 2)
         qDebug() << "Madplotlib(): isWidget=" << isWidget;
 #endif
+        _xAxisTop = _xAxisBottom = _yAxisLeft = _yAxisRight = nullptr;
         _chart = new QtCharts::QChart();
 
         _chartView = new QtCharts::QChartView(_chart);
@@ -432,6 +433,9 @@ public:
 #endif
         if (!_pixmap.isNull())
             _pixmap.save(filename);
+        else if(_isWidget && _chartView){
+            _pixmap = _chartView->grab();
+        }
     }
 
     /* xticks(): sets the x-limits of the current tick locations and labels.
@@ -640,31 +644,37 @@ public:
                      "]  yrange [" << _yMin << "," << _yMax << "]";
 #endif
 
-        QtCharts::QXYSeries* series = NULL;
-        if (marker == "o" || marker == "s") // it's a scatter plot!
-        {
-#if (DEBUG > 1) && (DEBUG < 3)
-            qDebug() << "plot(x,y): scatter plot";
-#endif
-            QtCharts::QScatterSeries* s = new QtCharts::QScatterSeries();
-            s->setMarkerSize(markersize); // symbol size
+        std::shared_ptr<QtCharts::QXYSeries> series;
+        auto itr = _seriesVec.find(_legend);
+        if(itr != _seriesVec.end()){
+            series = *itr;
+        }else{
+            if (marker == "o" || marker == "s") // it's a scatter plot!
+            {
+    #if (DEBUG > 1) && (DEBUG < 3)
+                qDebug() << "plot(x,y): scatter plot";
+    #endif
+                QtCharts::QScatterSeries* s = new QtCharts::QScatterSeries();
+                s->setMarkerSize(markersize); // symbol size
 
-            if (marker == "o")
-                s->setMarkerShape(QtCharts::QScatterSeries::MarkerShapeCircle);
+                if (marker == "o")
+                    s->setMarkerShape(QtCharts::QScatterSeries::MarkerShapeCircle);
 
-            if (marker == "s")
-                s->setMarkerShape(QtCharts::QScatterSeries::MarkerShapeRectangle);
-
-            series = (QtCharts::QXYSeries*)s;
+                if (marker == "s")
+                    s->setMarkerShape(QtCharts::QScatterSeries::MarkerShapeRectangle);
+                
+                series.reset((QtCharts::QXYSeries*)s);
+                series->setUseOpenGL(true);
+            }
+            else // draw line
+            {
+    #if (DEBUG > 1) && (DEBUG < 3)
+                qDebug() << "plot(x,y): line plot";
+    #endif
+                series.reset(new QtCharts::QLineSeries());
+                series->setUseOpenGL(true);
+            }
         }
-        else // draw line
-        {
-#if (DEBUG > 1) && (DEBUG < 3)
-            qDebug() << "plot(x,y): line plot";
-#endif
-            series = new QtCharts::QLineSeries();
-        }
-
         // Call a string parser! Ex: "label=Trump Tweets" becomes "Trump Tweets"
         _parseLegend();
         if (_legend.size())
@@ -674,13 +684,19 @@ public:
 #endif
             series->setName(_legend);
         }
-
-        for (int i = 0; i < x.rows(); i++)
-        {
+        
+        if(series->count() == x.rows()){
+            for (int i = 0; i < x.rows(); i++)
+                series->replace(i, x[i], y[i]);
+        }else{
+            series->clear();
+            for (int i = 0; i < x.rows(); i++)
+            {
 #if (DEBUG > 1) && (DEBUG < 3)
-            qDebug() << "plot(x,y): x[" << i << "]=" << x[i] << " y[" << i << "]=" << y[i];
+                qDebug() << "plot(x,y): x[" << i << "]=" << x[i] << " y[" << i << "]=" << y[i];
 #endif
-            series->append(x[i], y[i]);
+                series->append(x[i], y[i]);
+            }
         }
 
         // Customize series color and transparency
@@ -732,7 +748,8 @@ public:
         if (_colorIdx >= _colors.size())
             _colorIdx = 0;
 
-        _seriesVec.push_back(series);
+        //_seriesVec.push_back(series);
+        _seriesVec[_legend] = series;
 
 #if (DEBUG > 0) && (DEBUG < 2)
         qDebug() << "plot(x,y): -----";
@@ -791,7 +808,7 @@ public:
         qDebug() << "show(): xrange [" << _xMin << "," << _xMax << "] " <<
                      " yrange [" << _yMin << "," << _yMax << "]";
 #endif
-
+        
         QPen axisPen(Qt::black); // default axis line color and width
         axisPen.setWidth(1);
 
@@ -799,15 +816,22 @@ public:
         QtCharts::QCategoryAxis* categoryX = NULL;
         if (_showXticks == SHOW_TICK || _showXticks == HIDE_TICK)
         {
-            axisX = new QtCharts::QValueAxis;
+            bool add = true;
+            if (_xAxisBottom){
+                axisX = dynamic_cast<QtCharts::QValueAxis*>(_xAxisBottom);
+                add = false;
+            }else{
+                axisX = new QtCharts::QValueAxis;
+            }
             axisX->setGridLineVisible(_enableGrid);
             axisX->setTitleText(_xLabel);
             axisX->setLinePen(axisPen);
             axisX->setRange(_xMin, _xMax);
             axisX->setTickCount(_xTickCount);
             if (!_customLimits) axisX->applyNiceNumbers();
-            _chart->addAxis(axisX, Qt::AlignBottom);
-
+            if(add)
+                _chart->addAxis(axisX, Qt::AlignBottom);
+            _xAxisBottom = axisX;
             if (_showXticks == HIDE_TICK)
                 axisX->setLabelsVisible(false);
         }
@@ -829,23 +853,34 @@ public:
 
             categoryX->setRange(_xMin, _xMax);
             categoryX->setTickCount(_xTicks.size());
+            if(_xAxisBottom)
+                _chart->removeAxis(_xAxisBottom);
             _chart->addAxis(categoryX, Qt::AlignBottom);
+            _xAxisBottom = categoryX;
         }
 
         QtCharts::QValueAxis* axisY = NULL;
         QtCharts::QCategoryAxis* categoryY = NULL;
         if (_showYticks == SHOW_TICK || _showYticks == HIDE_TICK) // this is the default ticks setup
         {
-            axisY = new QtCharts::QValueAxis;
+            bool add = true;
+            if(_yAxisLeft){
+                axisY = dynamic_cast<QtCharts::QValueAxis*>(_yAxisLeft);
+                add = false;
+            }else{
+                axisY = new QtCharts::QValueAxis;
+            }
+            
             axisY->setGridLineVisible(_enableGrid);
             axisY->setTitleText(_yLabel);
             axisY->setLinePen(axisPen);
             axisY->setRange(_yMin, _yMax);
             axisY->setTickCount(_yTickCount);
             if (!_customLimits) axisY->applyNiceNumbers();
-            //axisY->setBase(8.0); // 1, 8, 64, 512, 4096
-            _chart->addAxis(axisY, Qt::AlignLeft);
-
+            if(add)
+                _chart->addAxis(axisY, Qt::AlignLeft);
+            _yAxisLeft = axisY;
+            
             if (_showYticks == HIDE_TICK)
                 axisY->setLabelsVisible(false);
         }
@@ -867,41 +902,39 @@ public:
 
             categoryY->setRange(_yMin, _yMax);
             categoryY->setTickCount(_yTicks.size());
+            if(_yAxisLeft)
+                _chart->removeAxis(_yAxisLeft);
             _chart->addAxis(categoryY, Qt::AlignLeft);
+            _yAxisLeft = categoryY;
         }
 
         /* Other possible customizations such as margins and background color */
-
-        //_chart->setMargins(QMargins(0,0,0,0));
-        //_chart->setPlotAreaBackgroundBrush(QBrush(Qt::black));
-        //_chart->setPlotAreaBackgroundVisible(true);
-
         // Remove (fat) exterior margins from QChart
         _chart->layout()->setContentsMargins(0, 0, 0, 0);
         _chart->setBackgroundRoundness(0);
 
         /* Add series of data */
-
-        for (int i = 0; i < _seriesVec.size(); i++)
+        _chart->removeAllSeries();
+        for(auto itr : _seriesVec)
         {
-            _chart->addSeries(_seriesVec[i]);
+            _chart->addSeries(itr.get());
 
             if (_showXticks == SHOW_TICK || _showXticks == HIDE_TICK)
             {
-                _seriesVec[i]->attachAxis(axisX);
+                itr->attachAxis(axisX);
             }
             else if (_showXticks == SHOW_CUSTOM_TICK)
             {
-                _seriesVec[i]->attachAxis(categoryX);
+                itr->attachAxis(categoryX);
             }
 
             if (_showYticks == SHOW_TICK || _showYticks == HIDE_TICK)
             {
-                _seriesVec[i]->attachAxis(axisY);
+                itr->attachAxis(axisY);
             }
             else if (_showYticks == SHOW_CUSTOM_TICK)
             {
-                _seriesVec[i]->attachAxis(categoryY);
+                itr->attachAxis(categoryY);
             }
         }
 
@@ -910,7 +943,7 @@ public:
 
         // Take a screenshot of the widget before it's destroyed
         // so it can be saved later, when savefig() is invoked after show().
-        _pixmap = _chartView->grab();
+        
 
         _chartView->show();
 
@@ -918,14 +951,14 @@ public:
         // However, is this chart is supposed to be a real widget, then do none of this.
         if (!_isWidget)
         {
+            _pixmap = _chartView->grab();
             _chartView->setAttribute(Qt::WA_DeleteOnClose); // This deletes _chartView!
             QEventLoop loop;
             QObject::connect(_chartView, SIGNAL(destroyed()), &loop, SLOT(quit()));
             loop.exec();
 
             // _chartView was automatically deleted. Release all the other resources!
-            for (int i = 0; i < _seriesVec.size(); i++)
-                delete _seriesVec[i];
+            //_seriesVec.clear();
         }
 
 #if (DEBUG > 0) && (DEBUG < 2)
@@ -933,6 +966,9 @@ public:
 #endif
     }
 
+    void clear(){
+        _seriesVec.clear();
+    }
 
 
 private:
@@ -1024,7 +1060,8 @@ private:
     QPixmap _pixmap;                                // show() screenshots the widget, savefig() writes it on the disk
     QtCharts::QChart* _chart;                       // manages the graphical representation of the chart's series, legends & axes
     QtCharts::QChartView* _chartView;               // standalone widget that can display charts
-    QVector<QtCharts::QXYSeries*> _seriesVec;      // every plot() creates a new series of data that is stored here
+    QMap<QString, std::shared_ptr<QtCharts::QXYSeries>> _seriesVec;      // every plot() creates a new series of data that is stored here
+    
 
     bool _isWidget;                                // true: show() doesn't block so this can be used as widget
     QString _legend;
@@ -1051,4 +1088,8 @@ private:
     qreal _yMax;                                   // Y axis max limit
 
     bool _enableGrid;                              // flag that show/hides the background grid
+    QtCharts::QAbstractAxis* _yAxisLeft;
+    QtCharts::QAbstractAxis* _yAxisRight;
+    QtCharts::QAbstractAxis* _xAxisBottom;
+    QtCharts::QAbstractAxis* _xAxisTop;
 };
