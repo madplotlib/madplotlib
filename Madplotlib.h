@@ -8,6 +8,9 @@
  * 2D plots inspired on matplotlib.
  */
 #pragma once
+
+#include <memory>
+
 #ifndef NO_EIGEN
 #include <Eigen/Dense>
 #endif
