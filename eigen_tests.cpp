@@ -85,7 +85,7 @@ void test3()
     plt.title("Test 3: Multiple Data Series");
     plt.axis(0, 25, 0, 14);
     plt.plot(x, y, marker=QString("--"), label=QString("label=Dashed Line"));
-    plt.plot(x, y+5, label=QString("label=Default Line"), (quint32)4);
+    plt.plot(x, y+5, label=QString("label=Default Line"), markersize=4);
     plt.plot(x, y+10, QString("."), label=QString("label=Dotted Line"));
     plt.legend(); // default position is "lower center"
     plt.show();
